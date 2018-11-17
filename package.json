@@ -1,0 +1,30 @@
+{
+  "name": "purescript-cloud-juice",
+  "version": "0.1.0",
+  "description": "Nakadi Client for PureScript",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "pulp test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-am-the-slime/purescript-cloud-juice.git"
+  },
+  "keywords": [
+    "nakadi",
+    "purescript"
+  ],
+  "author": "Mark Eibes",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/i-am-the-slime/purescript-cloud-juice/issues"
+  },
+  "homepage": "https://github.com/i-am-the-slime/purescript-cloud-juice#readme",
+  "dependencies": {
+    "xhr2": "^0.1.4",
+    "zlib": "^1.0.5"
+  }
+}

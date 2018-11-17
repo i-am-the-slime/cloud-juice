@@ -1,0 +1,30 @@
+{
+	 "String Newtype": {
+	 	"scope": "purescript",
+	 	"prefix": "nt",
+	 	"body": [
+	 		"newtype $1 = $1 String",
+			"derive instance nt$1 :: Newtype $1 _",
+			"derive newtype instance eq$1 :: Eq $1",
+			"derive newtype instance ord$1 :: Ord $1",
+			"derive newtype instance show$1 :: Show $1",
+			"derive newtype instance readForeign$1 :: ReadForeign $1",
+			"derive newtype instance writeForeign$1 :: WriteForeign $1"
+	 	],
+	 	"description": "Make a string newtype quickly"
+	 },
+	 "Error Variant": {
+	 	"scope": "purescript",
+	 	"prefix": "errorv",
+	 	"body": [
+			"newtype E$1 = E$1 Problem",
+            "derive instance ntE$1 :: Newtype E$1 _",
+            "derive newtype instance showE$1 :: Show E$1",
+            "derive newtype instance eqE$1 :: Eq E$1",
+			"_$2 = SProxy :: SProxy \"$2\"",
+			"e$1 :: ∀ v. Problem -> Variant ($2 :: E$1 | v)",
+			"e$1 = inj _$2 <<< E$1"
+	 	],
+	 	"description": "Make an error variant quickly"
+	 }
+}
