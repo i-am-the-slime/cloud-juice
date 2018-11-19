@@ -4,48 +4,45 @@ import Prelude
 
 import Control.Monad.Except (ExceptT(..), runExceptT)
 import Control.Monad.Reader (ReaderT, runReaderT)
-import Control.Monad.Rec.Class (forever)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.DateTime.Instant (Instant, unInstant)
 import Data.Either (Either(..), hush)
+import Data.Int (round, toNumber)
 import Data.List.Lazy (toUnfoldable)
 import Data.List.Lazy as List
 import Data.List.Lazy.NonEmpty as NEL
 import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
 import Data.String as String
-import Data.Time.Duration (class Duration, Milliseconds(..))
-import Data.Traversable (sequence_, traverse_)
+import Data.Time.Duration (Milliseconds(..), Seconds(..), convertDuration)
+import Data.Traversable (sequence, sequence_, traverse_)
 import Data.Variant (expand)
-import Debug.Trace (spy)
-import Effect (Effect)
-import Effect.Aff (delay, error, forkAff, killFiber, supervise)
+import Effect.Aff (Aff, delay)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Now (now)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import FlowId.Types (FlowId(..))
-import Nakadi.Client (Env, deleteEventType, getEventType, getEventTypes, postEventType, postEvents, postSubscription, putEventType, streamSubscriptionEvents)
+import Nakadi.Client (deleteEventType, getEventType, getEventTypes, postEventType, postEvents, postSubscription, putEventType, streamSubscriptionEvents)
+import Nakadi.Client.Types (Env)
 import Nakadi.Minimal as Minimal
 import Nakadi.Types (Event(..), EventTypeName(..), OwningApplication(..), SubscriptionId(..))
 import Node.Encoding (Encoding(..))
 import Node.Process (stdout)
 import Node.Stream (writeString)
 import Simple.JSON (class WriteForeign, writeImpl, writeJSON)
-import Test.Spec (Spec, describe, it, itOnly, pending, pending')
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec (Spec, describe, it, pending)
+import Test.Spec.Assertions (fail, shouldEqual)
 
 
 env :: Env ()
 env =
-  { flowId: FlowId "assbox"
+  { flowId: FlowId "test-flow-id"
   , baseUrl: "http://localhost"
-  -- , baseUrl: "https://nakadi-staging.aruha-test.zalan.do"
-  , token: pure "eyJraWQiOiJwbGF0Zm9ybS1pYW0tdmNlaHloajYiLCJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhM2U2MzdlMS01YTk5LTRmYzYtOGY5OS0xMzJkYmIzMzFkYjQiLCJodHRwczovL2lkZW50aXR5LnphbGFuZG8uY29tL3JlYWxtIjoidXNlcnMiLCJodHRwczovL2lkZW50aXR5LnphbGFuZG8uY29tL3Rva2VuIjoiQmVhcmVyIiwiaHR0cHM6Ly9pZGVudGl0eS56YWxhbmRvLmNvbS9tYW5hZ2VkLWlkIjoibWVpYmVzIiwiYXpwIjoienRva2VuIiwiaHR0cHM6Ly9pZGVudGl0eS56YWxhbmRvLmNvbS9icCI6IjgxMGQxZDAwLTQzMTItNDNlNS1iZDMxLWQ4MzczZmRkMjRjNyIsImF1dGhfdGltZSI6MTU0MjA1MDQ3MCwiaXNzIjoiaHR0cHM6Ly9pZGVudGl0eS56YWxhbmRvLmNvbSIsImV4cCI6MTU0MjIxMjg3OSwiaWF0IjoxNTQyMjA5MjY5fQ.4rpTe6MzivZRMtZcTR2JrXoyu3jXyUhhcPUvxfhfp13ZP044f4BSw6C2DqGUf40EhocIjvbveGHl8mdPuh-5Yw"
+  , token: pure "token"
   , port: 8080
-  -- , port: 443
   }
 
 run :: ∀ m a. ReaderT (Env ()) m a -> m a
@@ -60,19 +57,7 @@ spec =
           (Minimal.eventTypeSchema)
     let undefinedETN = undefinedET # _.name
 
-    -- let dataChangeET =
-    --   (Minimal.eventType
-    --     (EventTypeName "test-data-change") "cloud-juice")
-    --     (Minimal.schema {}))
-    --     { category =  "data"
-    --     }
-
     describe "/event-types" $ do
-      -- itOnly "Test" $ do
-      --   testFile <- liftEffect $ readTextFile UTF8 "./test/event-types-staging.json"
-      --   let r = (lmap (spy "Boy")) (readJSON testFile)
-      --   let (result :: Maybe (Array EventType)) = hush r
-      --   (r <#> (map getSchema)) `shouldEqual` (Right [])
       it "Preparation" $ do
         res <- run <<< runExceptT $ do
           types <- ExceptT $ (map <<< lmap $ expand) getEventTypes
@@ -106,6 +91,7 @@ spec =
     describe "/event-types/{name}/events" $ do
       -- pending "GET" -- deprecated, let's not support it
       it "POST" $ do
+        Console.log "Posting 10,000 events"
         let events = bigEvent #
                       writeImpl >>> UndefinedEvent >>>
                       NEL.repeat >>> NEL.tail >>>
@@ -169,44 +155,30 @@ spec =
     describe "/subscriptions/{subscription_id}/events" $ do
       pending "GET"
       it "POST (local)" $ do
-        -- let events = { "korkenzieher": "milchhof brodowin" } #
-        --               writeImpl >>> UndefinedEvent >>>
-        --               NEL.repeat >>> NEL.tail >>>
-        --               List.take 5000 >>> toUnfoldable
-        -- _ <- run $ postEventType undefinedET
-        -- _ <- replicateM 5000 $ run $ postEvents undefinedETN events
+        let timeout = 10.0 # Seconds
+        let minEvents = 4000
+
         let subs = Minimal.subscription (OwningApplication "cloud-juice") undefinedETN
         sub <- run $ postSubscription subs
         (void sub) `shouldEqual` (Right unit)
         let subId = fromMaybe (SubscriptionId "nein") (hush sub >>= _.id)
-        events <- liftEffect $ Ref.new 0
+        events     <- liftEffect $ Ref.new 0
         characters <- liftEffect $ Ref.new 0
-        startTime <- liftEffect now
-        run $ streamSubscriptionEvents subId (Minimal.streamParameters 20) (handler events characters startTime)
-        delay (Milliseconds 30000.0)
-        pure unit
-      pending' "POST (staging)" $ do
-        let etn = EventTypeName "availability-layer.retail-product_00f2a393-6889-4fc0-8cd9-86e454e6dfa3"
-        -- let subs = Minimal.subscription (OwningApplication "cloud-juice") etn
-        -- sub <- run $ postSubscription subs
-        -- (void sub) `shouldEqual` (Right unit)
-        -- let subId = fromMaybe (SubscriptionId "nein") (hush sub >>= _.id)
-        let subId = SubscriptionId "7bef3ddc-5a6a-4ac7-b904-2f0cc71efcd6"
-        events <- liftEffect $ Ref.new 0
-        characters <- liftEffect $ Ref.new 0
-        startTime <- liftEffect now
-        fiber <- forkAff (supervise (
-          run $ streamSubscriptionEvents subId (Minimal.streamParameters 1000) (handler events characters startTime)
-        ))
-        delay (10000.0 # Milliseconds)
-        Console.log "\nTime's up!"
-        killFiber (error "Timeout") fiber
-        pure unit
+        startTime  <- liftEffect now
+        res        <- run $ streamSubscriptionEvents subId (Minimal.streamParameters 20) (handler events characters startTime)
+        void res `shouldEqual` (Right unit)
+        Console.log $ "Consuming for " <> show (unwrap timeout) <> " seconds"
+        delay <<< convertDuration $ timeout
+        Console.log "\nKilling in the name of the lord"
+        _ <- liftEffect $ sequence res
+        eventsProcessed <- liftEffect $ Ref.read events
+        when (eventsProcessed < minEvents)
+          (fail $ "Processed fewer than " <> show minEvents <> " events in " <> show (unwrap timeout) <> " seconds.")
 
     describe "/subscriptions/{subscription_id}/stats" $ do
       pending "GET"
 
-handler :: ∀ a. WriteForeign a => Ref Int -> Ref Int -> Instant -> Array a -> Effect Unit
+handler :: ∀ a. WriteForeign a => Ref Int -> Ref Int -> Instant -> Array a -> Aff Unit
 handler events characters startTime x = liftEffect $ do
   countBefore <- Ref.read events
   let asJson = writeJSON x
@@ -214,10 +186,15 @@ handler events characters startTime x = liftEffect $ do
   Ref.modify_ (_ + Array.length x) events
   count <- Ref.read events
   chars <- Ref.read characters
+  let startMillis = unwrap (unInstant startTime)
+  nowMillis <- now <#> unwrap <<< unInstant
+  let speed = (toNumber count) / ((nowMillis - startMillis) / 1000.0)
   let megabytes = chars / (1024*1024)
-  -- when ((countBefore `div` 20) < (count `div` 20))
-  void (writeString stdout UTF8 ("\r" <> show count <> " events processed (" <> show megabytes <> " MB)") (pure unit))
-  if count /= 10000 then  pure unit else (now >>= (\endTime -> Console.log ("\n" <> show ((unwrap (unInstant endTime)) - (unwrap (unInstant startTime))))))
+  let text = "\r" <> show count <> " events processed (~" <> show megabytes <> " MB | " <> show (round speed) <> " events/sec)"
+  void $ writeString stdout UTF8 text (pure unit)
+  if count /= 10000
+    then pure unit
+    else (now >>= (\endTime -> Console.log ("\n" <> show ((unwrap (unInstant endTime)) - (unwrap (unInstant startTime))))))
 
 
 bigEvent :: { korkenzieher :: String , items :: Array { korkenzieher :: Array String } }
