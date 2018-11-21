@@ -3,18 +3,14 @@ module Json.Schema where
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Monad.Except (ExceptT(..), runExceptT)
-import Data.Either (Either(..), either, hush, isRight)
+import Data.Either (Either(..), either)
 import Data.Foldable (all)
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
-import Data.Traversable (traverse)
-import Debug.Trace (spy)
-import Foreign (F, Foreign, ForeignError(ForeignError), fail, isUndefined, readBoolean, readString, typeOf)
+import Foreign (F, Foreign, ForeignError(ForeignError), fail, readString, typeOf)
 import Foreign.Index (readProp)
-import Foreign.Internal (readObject)
 import Foreign.Object (Object)
-import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, readJSON, readJSON', writeImpl)
+import Simple.JSON (class ReadForeign, class WriteForeign, readImpl, writeImpl)
 
 newtype JsonSchema = JsonSchema
   { "type" :: Maybe TypeValidator
