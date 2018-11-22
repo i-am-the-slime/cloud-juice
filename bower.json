@@ -31,7 +31,8 @@
     "purescript-spec-discovery": "^3.0.0",
     "purescript-spec-quickcheck": "^3.0.0",
     "purescript-transformers": "^4.1.0",
-    "purescript-variant": "^5.2.0"
+    "purescript-variant": "^5.2.0",
+    "purescript-flow-id": "^0.1.2"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"

@@ -7,8 +7,9 @@ module Nakadi.Client.Types
 import Data.Either (Either)
 import Data.Variant (Variant)
 import Effect (Effect)
-import FlowId.Types (FlowId)
+import FlowId (FlowId)
 import Nakadi.Errors (E401)
+
 
 type Env r =
   { flowId  :: FlowId

@@ -24,7 +24,7 @@ import Effect.Class.Console as Console
 import Effect.Now (now)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import FlowId.Types (FlowId(..))
+import FlowId (FlowId(..))
 import Nakadi.Client (deleteEventType, getEventType, getEventTypes, postEventType, postEvents, postSubscription, putEventType, streamSubscriptionEvents)
 import Nakadi.Client.Types (Env)
 import Nakadi.Minimal as Minimal
