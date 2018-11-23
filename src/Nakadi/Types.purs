@@ -58,7 +58,7 @@ type CursorDistanceResult =
 type DataChangeEvent =
   { data_type :: String
   , data_op   :: String -- enum: C,U,D,S
-  , metdata   :: EventMetadata
+  , metadata  :: EventMetadata
   , data      :: Foreign
   }
 
