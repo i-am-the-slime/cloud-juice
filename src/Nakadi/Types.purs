@@ -312,9 +312,9 @@ derive newtype instance eqOwningApplication :: Eq OwningApplication
 derive newtype instance ordOwningApplication :: Ord OwningApplication
 derive newtype instance showOwningApplication :: Show OwningApplication
 instance readForeignOwningApplication :: ReadForeign OwningApplication where
-  readImpl f = ado
+  readImpl f = do
     nullable <- readImpl f
-    in OwningApplication $ fromMaybe "" (toMaybe nullable)
+    pure (OwningApplication $ fromMaybe "" (toMaybe nullable))
 derive newtype instance writeForeignOwningApplication :: WriteForeign OwningApplication
 
 newtype SubscriptionId = SubscriptionId String
