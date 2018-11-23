@@ -41,7 +41,7 @@ env :: Env ()
 env =
   { flowId: FlowId "test-flow-id"
   , baseUrl: "http://localhost"
-  , token: pure "token"
+  , token: pure "Bearer token"
   , port: 8080
   }
 

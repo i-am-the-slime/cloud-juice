@@ -6,14 +6,6 @@ import Data.Newtype (class Newtype)
 import Data.Variant (SProxy(..), Variant, inj)
 import Nakadi.Types (Problem, BatchItemResponse)
 
-newtype E207 = E207 (Array BatchItemResponse)
-derive instance ntE207 :: Newtype E207 _
-derive newtype instance showE207 :: Show E207
-derive newtype instance eqE207 :: Eq E207
-_multiStatus = SProxy :: SProxy "multiStatus"
-e207 :: ∀ v. (Array BatchItemResponse) -> Variant (multiStatus :: E207 | v)
-e207 = inj _multiStatus <<< E207
-
 newtype E400 = E400 Problem
 derive instance ntE400 :: Newtype E400 _
 derive newtype instance showE400 :: Show E400
@@ -61,3 +53,20 @@ derive newtype instance eqE422 :: Eq E422
 _unprocessableEntity = SProxy :: SProxy "unprocessableEntity"
 e422 :: ∀ v. Problem -> Variant (unprocessableEntity :: E422 | v)
 e422 = inj _unprocessableEntity <<< E422
+
+newtype E207 = E207 (Array BatchItemResponse)
+derive instance ntE207 :: Newtype E207 _
+derive newtype instance showE207 :: Show E207
+derive newtype instance eqE207 :: Eq E207
+_multiStatus = SProxy :: SProxy "multiStatus"
+e207 :: ∀ v. (Array BatchItemResponse) -> Variant (multiStatus :: E207 | v)
+e207 = inj _multiStatus <<< E207
+
+newtype E422Publish = E422Publish (Array BatchItemResponse)
+derive instance ntE422Publish :: Newtype E422Publish _
+derive newtype instance showE422Publish :: Show E422Publish
+derive newtype instance eqE422Publish :: Eq E422Publish
+_unprocessableEntityPublish = SProxy :: SProxy "unprocessableEntityPublish"
+e422Publish :: ∀ v. (Array BatchItemResponse) -> Variant (unprocessableEntityPublish :: E422Publish | v)
+e422Publish = inj _unprocessableEntityPublish <<< E422Publish
+

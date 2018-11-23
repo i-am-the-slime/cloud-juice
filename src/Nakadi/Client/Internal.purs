@@ -32,7 +32,7 @@ baseHeaders = do
   env <- ask
   token <- liftEffect $ env.token
   pure [ Tuple "X-Flow-ID" (unwrap env.flowId)
-       , Tuple "Authorization" ("Bearer " <> token)
+       , Tuple "Authorization" token
        ]
 
 baseRequest :: ∀ r m . MonadAsk (Env r) m => MonadAff m => Method -> String -> m (Request String)
