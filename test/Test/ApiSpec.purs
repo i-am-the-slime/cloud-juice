@@ -7,7 +7,7 @@ import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.DateTime.Instant (Instant, unInstant)
-import Data.Either (Either(..), hush)
+import Data.Either (Either(..), hush, isRight)
 import Data.Int (round, toNumber)
 import Data.List.Lazy (toUnfoldable)
 import Data.List.Lazy as List
@@ -25,7 +25,7 @@ import Effect.Now (now)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import FlowId (FlowId(..))
-import Nakadi.Client (deleteEventType, getEventType, getEventTypes, postEventType, postEvents, postSubscription, putEventType, streamSubscriptionEvents)
+import Nakadi.Client (deleteEventType, getEventType, getEventTypes, getSubscriptionStats, postEventType, postEvents, postSubscription, putEventType, streamSubscriptionEvents)
 import Nakadi.Client.Types (Env)
 import Nakadi.Minimal as Minimal
 import Nakadi.Types (Event(..), EventTypeName(..), OwningApplication(..), SubscriptionId(..))
@@ -34,7 +34,7 @@ import Node.Process (stdout)
 import Node.Stream (writeString)
 import Simple.JSON (class WriteForeign, writeImpl, writeJSON)
 import Test.Spec (Spec, describe, it, pending)
-import Test.Spec.Assertions (fail, shouldEqual)
+import Test.Spec.Assertions (fail, shouldEqual, shouldSatisfy)
 
 
 env :: Env ()
@@ -176,7 +176,12 @@ spec =
           (fail $ "Processed fewer than " <> show minEvents <> " events in " <> show (unwrap timeout) <> " seconds.")
 
     describe "/subscriptions/{subscription_id}/stats" $ do
-      pending "GET"
+      it "GET (local)" $ do
+        let subs = Minimal.subscription (OwningApplication "cloud-juice") undefinedETN
+        sub <- run $ postSubscription subs
+        let subId = fromMaybe (SubscriptionId "nein") (hush sub >>= _.id)
+        res <- run $ getSubscriptionStats subId
+        res `shouldSatisfy` isRight
 
 handler :: ∀ a. WriteForeign a => Ref Int -> Ref Int -> Instant -> Array a -> Aff Unit
 handler events characters startTime x = liftEffect $ do

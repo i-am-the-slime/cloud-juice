@@ -7,6 +7,7 @@ module Nakadi.Client
  , postEvents
  , postSubscription
  , streamSubscriptionEvents
+ , getSubscriptionStats
  )
  where
 
@@ -36,11 +37,12 @@ import Nakadi.Client.Internal (baseHeaders, catchErrors, deleteRequest, deserial
 import Nakadi.Client.Stream (StreamReturn, postStream, CommitResult)
 import Nakadi.Client.Types (Env, NakadiResponse)
 import Nakadi.Errors (E207, E400, E403, E404, E409, E422, E422Publish, _conflict, e207, e400, e401, e403, e404, e409, e422, e422Publish)
-import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, EventType, EventTypeName(..), Partition, StreamParameters, Subscription, SubscriptionCursor, SubscriptionId(..), XNakadiStreamId(..))
+import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, EventType, EventTypeName(..), Partition, StreamParameters, Subscription, SubscriptionCursor, SubscriptionEventTypeStats, SubscriptionId(..), XNakadiStreamId(..), Problem)
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
 import Node.Stream as Stream
 import Simple.JSON (writeJSON)
+import Web.File.FileReader (result)
 
 
 getEventTypes
@@ -272,3 +274,19 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
                 )
             ) (err)
   go baseBackOff
+
+getSubscriptionStats
+  :: ∀ r m
+   . MonadAsk (Env r) m
+  => MonadThrow Error m
+  => MonadAff m
+  => SubscriptionId
+  -> m (NakadiResponse (notFound :: E404) (Array SubscriptionEventTypeStats))
+getSubscriptionStats (SubscriptionId subId) = do
+  let url = "/subscriptions/" <> subId <> "/stats"
+  response :: Either Problem {items:: Array SubscriptionEventTypeStats}  <- getRequest url >>= request >>= deserialise
+  let result = map _.items response
+  result # catchErrors case _ of
+    p @ { status: 401 } -> pure $ lmap e401 result
+    p @ { status: 404 } -> pure $ lmap e404 result
+    p -> unhandled p
