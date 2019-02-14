@@ -219,13 +219,13 @@ type Subscription =
   }
 
 type StreamParameters =
-  { partitions            :: Maybe (Array EventTypePartition)
-  , max_unconsumed_events :: Maybe Int
-  , batch_limit           :: Maybe Int
-  , stream_limit          :: Maybe Int
-  , batch_flush_timeout   :: Maybe Int
-  , stream_timeout        :: Maybe Int
-  , commit_timeout        :: Maybe Int
+  { partitions             :: Maybe (Array EventTypePartition)
+  , max_uncommitted_events :: Maybe Int
+  , batch_limit            :: Maybe Int
+  , stream_limit           :: Maybe Int
+  , batch_flush_timeout    :: Maybe Int
+  , stream_timeout         :: Maybe Int
+  , commit_timeout         :: Maybe Int
   }
 
 type SubscriptionAuthorization =

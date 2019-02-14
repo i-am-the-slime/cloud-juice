@@ -62,10 +62,10 @@ subscription owning_application eventName =
   , authorization: Nothing
   }
 
-streamParameters :: Int -> StreamParameters
-streamParameters batchLimit =
+streamParameters :: Int -> Int -> StreamParameters
+streamParameters batchLimit maxUncommitted =
   { partitions: Nothing
-  , max_unconsumed_events: Nothing
+  , max_uncommitted_events: Just maxUncommitted
   , batch_limit: Just batchLimit
   , stream_limit: Nothing
   , batch_flush_timeout: Nothing
