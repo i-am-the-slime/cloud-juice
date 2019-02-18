@@ -11,7 +11,7 @@ import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
-import Data.Maybe (Maybe, fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.String as String
 import Data.Traversable (traverse)
 import Effect (Effect)
@@ -30,7 +30,7 @@ import Nakadi.Errors (E400, E403, E404, E409, E422, e400, e401, e403, e404, e409
 import Nakadi.Types (Event, SubscriptionCursor, SubscriptionEventStreamBatch, SubscriptionId, XNakadiStreamId(..))
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
-import Node.Stream (Read, Stream, destroy, onDataString, onEnd, pipe)
+import Node.Stream (Read, Stream, destroy, onDataString, onEnd, onReadable, pause, pipe, readString, resume)
 import Simple.JSON (readJSON)
 
 type StreamReturn
@@ -101,9 +101,11 @@ handleRequest
 handleRequest resultVar stream commit eventHandler env = do
   buffer <- liftEffect $ Ref.new ""
   -- onEnd stream (runAff_ handlePutAVarError (AVar.put (Right unit) resultVar))
-  onDataString stream UTF8 (handler buffer)
+  onReadable stream (handler buffer)
   where
-    handler buffer resp = runAff_ handleCommitError $ do
+    handler buffer = runAff_ handleCommitError $ do
+      resp <- liftEffect $ fromMaybe "" <$> readString stream Nothing UTF8
+      liftEffect $ pause stream
       -- Update buffer
       prev <- liftEffect $ Ref.read buffer
       let chunked = chunk (prev <> resp)
@@ -123,7 +125,7 @@ handleRequest resultVar stream commit eventHandler env = do
       liftEffect $ case commitResult of
         Left err -> throwException $ error (show err)
         Right _ -> pure unit
-      pure unit
+      liftEffect $ resume stream
 
 handleRequestErrors ∷ ∀ r. AVar StreamReturn → Stream (read ∷ Read | r) -> Effect Unit
 handleRequestErrors resultVar response = do
