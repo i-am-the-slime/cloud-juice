@@ -9,7 +9,7 @@ import Data.Nullable (toMaybe)
 import FlowId (FlowId)
 import Foreign (Foreign)
 import Json.Schema (JsonSchema)
-import Json.Types (AtLeastOne, DateTimeRFC3339)
+import Json.Types (AtLeastOne)
 import Simple.JSON (class ReadForeign, class WriteForeign, parseJSON, readImpl, writeImpl, writeJSON)
 
 type AdminAuthorization =
@@ -79,8 +79,8 @@ instance readForeignEvent :: ReadForeign Event where
 type EventMetadata =
   { eid                      :: String -- uuid
   , event_type               :: Maybe String
-  , occurred_at              :: DateTimeRFC3339
-  , received_at              :: Maybe DateTimeRFC3339 -- readOnly
+  , occurred_at              :: String -- TODO: Proper date type
+  , received_at              :: Maybe String -- TODO: Proper date type -- readOnly
   , version                  :: Maybe String -- readOnly
   , parent_eids              :: Maybe (Array String)
   , flow_id                  :: Maybe FlowId
@@ -111,8 +111,8 @@ type EventType =
   , ordering_key_fields   :: Maybe (Array String)
   , ordering_instance_ids :: Maybe (Array String)
   , audience              :: Maybe String -- x-extensible-enum: component-internal business-unit-internal company-internal external-partner external-public
-  , created_at            :: Maybe DateTimeRFC3339
-  , updated_at            :: Maybe DateTimeRFC3339
+  , created_at            :: Maybe String
+  , updated_at            :: Maybe String
   }
 
 type EventTypeAuthorization =
@@ -146,7 +146,7 @@ instance writeForeignStringSchema :: WriteForeign StringSchema where
 
 type EventTypeSchema =
   { version    :: Maybe String
-  , created_at :: Maybe DateTimeRFC3339
+  , created_at :: Maybe String
   , type       :: String -- enum: json_schema
   , schema     :: StringSchema
   }
@@ -211,7 +211,7 @@ type Subscription =
   , owning_application :: OwningApplication
   , event_types        :: Array EventTypeName
   , consumer_group     :: Maybe String
-  , created_at         :: Maybe DateTimeRFC3339
+  , created_at         :: Maybe String
   , read_from          :: Maybe String
   , initial_cursors    :: Maybe (Array SubscriptionCursorWithoutToken)
   , status             :: Maybe (Array SubscriptionEventTypeStatus)
