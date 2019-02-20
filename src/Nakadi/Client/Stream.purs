@@ -1,6 +1,8 @@
 module Nakadi.Client.Stream
   ( postStream
-  , StreamReturn
+  , StreamReturn(..)
+  , StreamError
+  , CommitError
   , CommitResult
   )
   where
@@ -14,6 +16,7 @@ import Data.Either (Either(..), either)
 import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String as String
 import Data.Traversable (traverse)
+import Data.Variant (Variant)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, runAff_)
 import Effect.Aff.AVar (AVar)
@@ -26,20 +29,31 @@ import Foreign.Object as Object
 import Gzip.Gzip as Gzip
 import Nakadi.Client.Internal (catchErrors, jsonErr, unhandled)
 import Nakadi.Client.Types (NakadiResponse, Env)
-import Nakadi.Errors (E400, E403, E404, E409, E422, e400, e401, e403, e404, e409)
+import Nakadi.Errors (E400, E401, E403, E404, E409, E422, e400, e401, e403, e404, e409)
 import Nakadi.Types (Event, SubscriptionCursor, SubscriptionEventStreamBatch, SubscriptionId, XNakadiStreamId(..))
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
-import Node.Stream (Read, Stream, destroy, onDataString, onEnd, pipe)
+import Node.Stream (Read, Stream, onDataString, onEnd, pipe)
 import Simple.JSON (readJSON)
 
-type StreamReturn
-  = NakadiResponse
-  ( badRequest :: E400
+type StreamError = Variant
+  ( unauthorized :: E401
+  , badRequest :: E400
   , forbidden  :: E403
   , notFound   :: E404
   , conflict   :: E409
-  ) (Effect Unit)
+  )
+
+type CommitError = Variant
+  ( unauthorized :: E401
+  , forbidden :: E403
+  , notFound :: E404
+  , unprocessableEntity :: E422
+  )
+
+data StreamReturn
+  = FailedToStream StreamError
+  | FailedToCommit CommitError
 
 type EventHandler = Array Event -> Aff Unit
 
@@ -64,7 +78,6 @@ postStream resultVar commitCursors subscriptionId eventHandler env response = do
   if HTTP.statusCode response /= 200
     then handleRequestErrors resultVar stream
     else do
-      runAff_ handlePutAVarError (AVar.put (Right $ destroy stream) resultVar)
       xStreamId <- XNakadiStreamId <$> getHeaderOrThrow "X-Nakadi-StreamId" response
       -- Positive response, so we reset the backoff
       let commit = mkCommit xStreamId
@@ -75,8 +88,8 @@ postStream resultVar commitCursors subscriptionId eventHandler env response = do
     then do pure (Right unit)
     else commitCursors subscriptionId xStreamId cursors
 
-handleCommitError :: Either Error Unit -> Effect Unit
-handleCommitError = case _ of
+handleUnhandledError :: Either Error Unit -> Effect Unit
+handleUnhandledError = case _ of
     Left e -> do
       liftEffect $ throwException (error $ "Error in processing " <> show e)
     Right a -> pure unit
@@ -103,7 +116,7 @@ handleRequest resultVar stream commit eventHandler env = do
   -- onEnd stream (runAff_ handlePutAVarError (AVar.put (Right unit) resultVar))
   onDataString stream UTF8 (handler buffer)
   where
-    handler buffer resp = runAff_ handleCommitError $ do
+    handler buffer resp = runAff_ handleUnhandledError $ do
       -- Update buffer
       prev <- liftEffect $ Ref.read buffer
       let chunked = chunk (prev <> resp)
@@ -120,8 +133,8 @@ handleRequest resultVar stream commit eventHandler env = do
       let (cursors :: Array SubscriptionCursor) = batch <#> _.cursor
 
       commitResult <- runReaderT (commit cursors) env
-      liftEffect $ case commitResult of
-        Left err -> throwException $ error (show err)
+      case commitResult of
+        Left err -> AVar.put (FailedToCommit err) resultVar
         Right _ -> pure unit
       pure unit
 
@@ -140,7 +153,9 @@ handleRequestErrors resultVar response = do
       p @ { status: 404 } -> pure $ lmap e404 res
       p @ { status: 409 } -> pure $ lmap e409 res
       p -> unhandled p
-    AVar.put result resultVar
+    case result of
+      Left err -> AVar.put (FailedToStream err) resultVar
+      Right _ -> pure unit
   where
   throwError = case _ of
     Left e -> do

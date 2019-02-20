@@ -29,13 +29,14 @@ import Data.Variant (default, on)
 import Effect.Aff (Aff, delay, effectCanceler, forkAff, makeAff)
 import Effect.Aff.AVar as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (Error, error, throwException)
 import Foreign.Object as Object
 import Nakadi.Client.Internal (baseHeaders, catchErrors, deleteRequest, deserialise, deserialiseProblem, deserialise_, getRequest, postRequest, putRequest, readJson, request, unhandled)
-import Nakadi.Client.Stream (StreamReturn, postStream, CommitResult)
+import Nakadi.Client.Stream (CommitResult, StreamReturn(..), postStream)
 import Nakadi.Client.Types (Env, NakadiResponse)
-import Nakadi.Errors (E207, E400, E403, E404, E409, E422, E422Publish, _conflict, e207, e400, e401, e403, e404, e409, e422, e422Publish)
+import Nakadi.Errors (E207, E400, E403, E404, E409(..), E422(..), E422Publish, _conflict, _unprocessableEntity, e207, e400, e401, e403, e404, e409, e422, e422Publish)
 import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, EventType, EventTypeName(..), Partition, StreamParameters, Subscription, SubscriptionCursor, SubscriptionId(..), XNakadiStreamId(..))
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
@@ -259,12 +260,25 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
         _ <- liftAff <<< forkAff <<< makeAff $ listen rv
         res <- liftAff $ AVar.take rv
         case res of
-          Right canceler -> pure (Right canceler)
-          Left err -> (
+          FailedToStream err -> (
             default (pure res)
-              # (on _conflict (\_ -> do
-                  Console.error
-                    $ "No flee slots available. Retrying in "
+              # (on _conflict (\(E409 prob) -> do
+                  liftEffect $ env.logWarn prob
+                    $  "Failed to start streaming."
+                    <> " Retrying in "
+                    <> show (round backOff)
+                    <> " seconds"
+                  liftAff (delay (convertDuration bo))
+                  go (2.0 * backOff # Seconds))
+                )
+            ) err
+          FailedToCommit err -> (
+            default (pure res)
+              # (on _unprocessableEntity (\(E422 prob) -> do
+                  liftEffect $ env.logWarn prob
+                    $  "Failed to commit cursor."
+                    <> " Assuming too slow commit. "
+                    <> " Retrying in "
                     <> show (round backOff)
                     <> " seconds"
                   liftAff (delay (convertDuration bo))
