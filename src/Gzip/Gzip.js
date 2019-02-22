@@ -2,4 +2,4 @@
 
 // module Gzip
 
-exports.gunzip = require('zlib').createGunzip;
+exports.gunzip = function() { return require('zlib').createGunzip() } ;

@@ -9,31 +9,33 @@ module Nakadi.Client.Stream
 
 import Prelude
 
+import Control.Alt ((<|>))
 import Control.Monad.Reader (ReaderT, runReaderT)
-import Data.Array as Array
+import Data.Array as A
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
-import Data.Maybe (Maybe, fromMaybe, maybe)
+import Data.Foldable (sum)
+import Data.Maybe (Maybe, fromMaybe, isNothing, maybe)
 import Data.String as String
-import Data.Traversable (traverse)
 import Data.Variant (Variant)
 import Effect (Effect)
 import Effect.Aff (Aff, Error, runAff_)
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
-import Effect.Console as Console
-import Effect.Exception (error, throwException)
+import Effect.Class.Console as Console
+import Effect.Exception (error, throw, throwException)
 import Effect.Ref as Ref
 import Foreign.Object as Object
 import Gzip.Gzip as Gzip
 import Nakadi.Client.Internal (catchErrors, jsonErr, unhandled)
 import Nakadi.Client.Types (NakadiResponse, Env)
 import Nakadi.Errors (E400, E401, E403, E404, E409, E422, e400, e401, e403, e404, e409)
-import Nakadi.Types (Event, SubscriptionCursor, SubscriptionEventStreamBatch, SubscriptionId, XNakadiStreamId(..))
+import Nakadi.Types (Event, StreamParameters, SubscriptionEventStreamBatch, SubscriptionId, XNakadiStreamId(..), SubscriptionCursor)
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
-import Node.Stream (Read, Stream, onDataString, onEnd, pipe)
+import Node.Stream (Duplex, Read, Stream, onDataEither, onDataString, onEnd, pipe)
+import Node.Stream as Stream
 import Simple.JSON (readJSON)
 
 type StreamError = Variant
@@ -54,6 +56,7 @@ type CommitError = Variant
 data StreamReturn
   = FailedToStream StreamError
   | FailedToCommit CommitError
+  | StreamClosed
 
 type EventHandler = Array Event -> Aff Unit
 
@@ -62,26 +65,38 @@ type CommitResult =
 
 postStream
   :: forall r
-   . AVar StreamReturn
+   . { resultVar :: AVar StreamReturn
+     , batchesVar :: AVar (Array SubscriptionEventStreamBatch)
+     , onStreamEstablished :: Effect Unit
+     }
+  -> StreamParameters
   -> (SubscriptionId -> XNakadiStreamId -> Array SubscriptionCursor -> ReaderT (Env r) Aff CommitResult)
   -> SubscriptionId
   -> EventHandler
   -> Env r
   -> HTTP.Response
   -> Effect Unit
-postStream resultVar commitCursors subscriptionId eventHandler env response = do
+postStream { resultVar, batchesVar, onStreamEstablished } streamParams commitCursors subscriptionId eventHandler env response = do
   let _ = HTTP.statusMessage response
   let isGzipped = getHeader "Content-Encoding" response <#> String.contains (String.Pattern "gzip") # fromMaybe false
   let baseStream = HTTP.responseAsStream response
-  stream <- if isGzipped then Gzip.gunzip >>= \gunzip -> pipe baseStream gunzip $> gunzip else pure baseStream
+  stream <-
+    if isGzipped
+    then do
+      gunzip <- Gzip.gunzip
+      Stream.onError gunzip (const $ pure unit)
+      pipe baseStream gunzip
+    else
+      pure baseStream
 
   if HTTP.statusCode response /= 200
     then handleRequestErrors resultVar stream
     else do
-      xStreamId <- XNakadiStreamId <$> getHeaderOrThrow "X-Nakadi-StreamId" response
       -- Positive response, so we reset the backoff
+      onStreamEstablished
+      xStreamId <- XNakadiStreamId <$> getHeaderOrThrow "X-Nakadi-StreamId" response
       let commit = mkCommit xStreamId
-      handleRequest resultVar stream commit eventHandler env
+      handleRequest { resultVar, batchesVar } streamParams stream commit eventHandler env
   where
   mkCommit xStreamId cursors =
     if cursors == mempty
@@ -100,43 +115,47 @@ handlePutAVarError = case _ of
       liftEffect $ throwException (error $ "Error setting AVar " <> show e)
     Right a -> pure unit
 
-chunk :: String -> Array String
-chunk = String.split $ String.Pattern "\n"
-
 handleRequest
   :: forall env r
-   . AVar StreamReturn
+   . { resultVar :: AVar StreamReturn
+     , batchesVar :: AVar (Array SubscriptionEventStreamBatch)
+     }
+  -> StreamParameters
   -> Stream (read ∷ Read | r)
   -> (Array SubscriptionCursor -> ReaderT (Env env) Aff CommitResult)
   -> EventHandler
   -> Env env
   -> Effect Unit
-handleRequest resultVar stream commit eventHandler env = do
-  buffer <- liftEffect $ Ref.new ""
-  -- onEnd stream (runAff_ handlePutAVarError (AVar.put (Right unit) resultVar))
-  onDataString stream UTF8 (handler buffer)
+handleRequest { resultVar, batchesVar } streamParams stream' commit eventHandler env = do
+  splitter <- split2
+  stream <- pipe stream' splitter
+  onDataEither stream handler
   where
-    handler buffer resp = runAff_ handleUnhandledError $ do
-      -- Update buffer
-      prev <- liftEffect $ Ref.read buffer
-      let chunked = chunk (prev <> resp)
-      let processable =  Array.dropEnd 1 chunked
-      _ <- liftEffect $ Ref.modify_ (const (fromMaybe "" (Array.last chunked))) buffer
+    handler resp = runAff_ handleUnhandledError $ do
+      batchedOld <- AVar.take batchesVar
+      str <- either pure (const <<< liftEffect <<< throw $ "unexpected") resp
+      let decoded = readJSON str
+      newEventBatch :: SubscriptionEventStreamBatch <- either jsonErr pure decoded
+      let batchedNew = batchedOld `A.snoc` newEventBatch
+      let eventsBatched = sum $ (\x -> fromMaybe 0 (A.length <$> x.events)) <$> batchedNew
+      let minBatched = fromMaybe 1 $
+                       ((_ / 2) <$> streamParams.max_uncommitted_events)
+                       <|> streamParams.batch_limit
+      if (eventsBatched >= minBatched || isNothing newEventBatch.events)
+        then do
+          consumeAndCommit newEventBatch.cursor batchedNew
+          AVar.put [] batchesVar
+        else do
+          AVar.put batchedNew batchesVar
 
-      -- Decode incoming data
-      let decoded = traverse readJSON processable
-      batch :: Array SubscriptionEventStreamBatch <- either jsonErr pure decoded
-      let events = batch <#> _.events <#> fromMaybe []
-
+    consumeAndCommit :: SubscriptionCursor -> Array SubscriptionEventStreamBatch -> Aff Unit
+    consumeAndCommit cursor batches = do
       -- Handle events
-      results <- traverse eventHandler events
-      let (cursors :: Array SubscriptionCursor) = batch <#> _.cursor
-
-      commitResult <- runReaderT (commit cursors) env
+      results <- eventHandler ((\b -> fromMaybe [] b.events) =<< batches)
+      commitResult <- runReaderT (commit [cursor]) env -- TODO Maybe not array of one
       case commitResult of
         Left err -> AVar.put (FailedToCommit err) resultVar
         Right _ -> pure unit
-      pure unit
 
 handleRequestErrors ∷ ∀ r. AVar StreamReturn → Stream (read ∷ Read | r) -> Effect Unit
 handleRequestErrors resultVar response = do
@@ -173,3 +192,5 @@ getHeaderOrThrow :: String -> HTTP.Response -> Effect String
 getHeaderOrThrow headerName =
   maybe (throwException (error $ "Required header " <> headerName <> " is missing")) pure <<<
       getHeader headerName
+
+foreign import split2 :: Effect Duplex

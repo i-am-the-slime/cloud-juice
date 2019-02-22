@@ -33,7 +33,8 @@
     "purescript-transformers": "^4.1.0",
     "purescript-variant": "^5.2.0",
     "purescript-flow-id": "^0.1.2",
-    "purescript-nullable": "^4.1.0"
+    "purescript-nullable": "^4.1.0",
+    "purescript-aff-retry": "^1.2.1"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"
