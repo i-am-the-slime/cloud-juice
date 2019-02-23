@@ -27,7 +27,8 @@ import Data.String as String
 import Data.Time.Duration (Milliseconds(..), Seconds(..), convertDuration)
 import Data.Tuple (Tuple(..))
 import Data.Variant (default, on)
-import Effect.Aff (Aff, delay, launchAff_, message)
+import Effect (Effect)
+import Effect.Aff (Aff, delay, message)
 import Effect.Aff.AVar as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Effect.Aff.Retry (RetryPolicyM, RetryStatus, constantDelay, limitRetries, recovering)
@@ -42,6 +43,7 @@ import Nakadi.Client.Types (Env, NakadiResponse)
 import Nakadi.Errors (E207, E400, E403, E404, E409(..), E422(..), E422Publish, _conflict, _unprocessableEntity, e207, e400, e401, e403, e404, e409, e422, e422Publish)
 import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, EventType, EventTypeName(..), Partition, StreamParameters, Subscription, SubscriptionCursor, SubscriptionId(..), XNakadiStreamId(..))
 import Node.Encoding (Encoding(..))
+import Node.HTTP.Client (Request)
 import Node.HTTP.Client as HTTP
 import Node.Stream as Stream
 import Simple.JSON (writeJSON)
@@ -217,6 +219,8 @@ commitCursors (SubscriptionId id) (XNakadiStreamId header) items = do
     p -> unhandled p
 
 
+foreign import removeRequestTimeout :: Request -> Effect Unit
+
 streamSubscriptionEvents
   :: ∀ r m
    . MonadAsk (Env r) m
@@ -245,30 +249,31 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
         let hostname = fromMaybe env.baseUrl (https <|> http)
         let protocol = if isJust http then "http:" else "https:"
         let options = HTTP.protocol := protocol
-                  <> HTTP.hostname := hostname
-                  <> HTTP.port     := env.port
-                  <> HTTP.headers  := HTTP.RequestHeaders headers
-                  <> HTTP.method   := "POST"
-                  <> HTTP.path     := ("/subscriptions/" <> subId <> "/events")
+                   <> HTTP.hostname := hostname
+                   <> HTTP.port     := env.port
+                   <> HTTP.headers  := HTTP.RequestHeaders headers
+                   <> HTTP.method   := "POST"
+                   <> HTTP.path     := ("/subscriptions/" <> subId <> "/events")
 
         let requestCallback = postStream postArgs streamParameters commitCursors sid eventHandler env
         req <- HTTP.request options requestCallback
+        removeRequestTimeout req
         let writable = HTTP.requestAsStream req
         let body = writeJSON streamParameters
-        Stream.onClose writable (launchAff_ $ AVar.put StreamClosed postArgs.resultVar)
-        Stream.onEnd writable (Console.log "end!!!")
-        Stream.onFinish writable (Console.log "finish!!!")
+        Stream.onClose writable (Console.log "request written!")
+        Stream.onEnd writable (Console.log "request end!!!")
+        Stream.onFinish writable (Console.log "request finish!!!")
         Stream.onError writable (\e -> Console.log $ "Error!!!" <> message e)
         let endStream = do
               Console.log "Destroying stream"
-              Stream.destroy writable
-        _ <- Stream.writeString writable UTF8 body (pure unit)
-        pure endStream
+              Stream.end writable (pure unit)
+        _ <- Stream.writeString writable UTF8 body endStream
+        pure unit
 
   let baseBackOff = 1.0 # Seconds
   backOffRef <- liftEffect $ Ref.new baseBackOff
-  let resetBackOff = liftEffect $ Ref.write baseBackOff backOffRef
-
+  let resetBackOff = liftEffect $ do
+        Ref.write baseBackOff backOffRef
 
   let
     go :: m StreamReturn
