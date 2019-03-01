@@ -241,7 +241,7 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
               , Tuple "Authorization" token
               , Tuple "Content-Type"    "application/json"
               , Tuple "Accept"          "application/json"
-              , Tuple "Accept-Encoding" "gzip"
+              -- , Tuple "Accept-Encoding" "gzip"
               ]
         let headers = Object.fromFoldable headers'
         let https = String.stripPrefix (String.Pattern "https://") env.baseUrl
