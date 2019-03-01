@@ -11,7 +11,7 @@
     "output"
   ],
   "dependencies": {
-    "purescript-affjax": "^7.0.0",
+    "purescript-affjax": "^8.0.0",
     "purescript-avar": "^3.0.0",
     "purescript-console": "^4.2.0",
     "purescript-debug": "^4.0.0",

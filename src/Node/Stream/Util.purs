@@ -27,6 +27,7 @@ writable = writableImpl
 foreign import throughMap
   ∷ ∀ a b. (a -> b) -> Effect Duplex
 
-foreign import split2 :: forall a. (String -> a) -> Effect Duplex
+foreign import split2 ∷ ∀ a. (String -> a) -> Effect Duplex
 
+splitWithFn ∷ ∀ a. (String -> a) -> Effect Duplex
 splitWithFn = split2
