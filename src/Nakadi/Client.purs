@@ -317,10 +317,3 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
     retryChecks = [\_ _ -> pure true]
 
   recovering retryPolicy retryChecks (const go)
-
-
-
-
-
-
-

@@ -43,6 +43,7 @@ env =
   , baseUrl: "http://localhost"
   , token: pure "Bearer token"
   , port: 8080
+  , logWarn: \maybeProblem msg -> Console.log $ msg <> ": " <> show maybeProblem
   }
 
 run :: ∀ m a. ReaderT (Env ()) m a -> m a
@@ -165,8 +166,7 @@ spec =
         events     <- liftEffect $ Ref.new 0
         characters <- liftEffect $ Ref.new 0
         startTime  <- liftEffect now
-        res        <- run $ streamSubscriptionEvents subId (Minimal.streamParameters 20) (handler events characters startTime)
-        void res `shouldEqual` (Right unit)
+        res        <- run $ streamSubscriptionEvents subId (Minimal.streamParameters 20 40) (handler events characters startTime)
         Console.log $ "Consuming for " <> show (unwrap timeout) <> " seconds"
         delay <<< convertDuration $ timeout
         Console.log "\nKilling in the name of the lord"
