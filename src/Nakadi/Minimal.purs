@@ -2,6 +2,8 @@ module Nakadi.Minimal where
 
 import Prelude
 
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NE
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Json.Schema (JsonSchema(..))
@@ -51,9 +53,13 @@ eventTypeSchema =
 
 subscription :: OwningApplication -> EventTypeName -> Subscription
 subscription owning_application eventName =
+  subscriptionForMany owning_application (pure eventName)
+
+subscriptionForMany :: OwningApplication -> NonEmptyArray EventTypeName -> Subscription
+subscriptionForMany owning_application eventNames =
   { id: Nothing
   , owning_application
-  , event_types: [eventName]
+  , event_types: NE.toArray eventNames
   , consumer_group: Nothing
   , created_at: Nothing
   , read_from: Nothing
