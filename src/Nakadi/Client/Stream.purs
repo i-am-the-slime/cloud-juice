@@ -17,7 +17,7 @@ import Data.Maybe (Maybe, fromMaybe, maybe)
 import Data.String as String
 import Data.Variant (Variant)
 import Effect (Effect)
-import Effect.Aff (Aff, Error, launchAff_, runAff_)
+import Effect.Aff (Aff, Error, launchAff_, message, runAff_)
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
