@@ -13,7 +13,7 @@ import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (traverse_)
-import Data.Maybe (Maybe, fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.String as String
 import Data.Variant (Variant)
 import Effect (Effect)
@@ -34,7 +34,7 @@ import Nakadi.Types (Event, StreamParameters, SubscriptionCursor, SubscriptionId
 import Node.Buffer (Buffer)
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
-import Node.Stream (Read, Stream, onData, onDataString, onEnd, pipe)
+import Node.Stream (Read, Stream, onData, onDataString, onEnd, onError, pipe)
 import Node.Stream as Stream
 import Node.Stream.Util (BufferSize, splitAtNewline)
 import Simple.JSON (E, readJSON)
@@ -132,8 +132,12 @@ handleRequest
   -> Effect Unit
 handleRequest { resultVar, buffer, bufsize } streamParams resStream commit eventHandler env = do
   callback <- splitAtNewline buffer bufsize  handle
-  onData resStream callback
-  onEnd resStream (launchAff_ $ AVar.put StreamClosed resultVar)
+  onData  resStream callback
+  onEnd   resStream (launchAff_ $ AVar.put StreamClosed resultVar)
+  onError resStream (\e -> do
+    env.logWarn Nothing $ "Error in read stream " <> message e
+    launchAff_ $ AVar.put StreamClosed resultVar
+    )
   where
     handle eventStreamBatch = runAff_ handleUnhandledError $ do
         let parseFn = JSON.read ∷ Foreign -> E SubscriptionEventStreamBatch
