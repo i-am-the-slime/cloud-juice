@@ -68,8 +68,6 @@ type CommitResult =
 postStream
   ∷ ∀ r
   . { resultVar ∷ AVar StreamReturn
-    , batchesVar ∷ AVar (Array SubscriptionEventStreamBatch)
-    , onStreamEstablished ∷ Effect Unit
     , buffer ∷ Buffer
     , bufsize ∷ BufferSize
     }
@@ -80,7 +78,7 @@ postStream
   -> Env r
   -> HTTP.Response
   -> Effect Unit
-postStream { resultVar, batchesVar, onStreamEstablished, buffer, bufsize } streamParams commitCursors subscriptionId eventHandler env response = do
+postStream { resultVar, buffer, bufsize } streamParams commitCursors subscriptionId eventHandler env response = do
   let _ = HTTP.statusMessage response
   let isGzipped = getHeader "Content-Encoding" response <#> String.contains (String.Pattern "gzip") # fromMaybe false
   let baseStream = HTTP.responseAsStream response
@@ -99,15 +97,14 @@ postStream { resultVar, batchesVar, onStreamEstablished, buffer, bufsize } strea
     then handleRequestErrors resultVar stream
     else do
       -- Positive response, so we reset the backoff
-      onStreamEstablished
       xStreamId <- XNakadiStreamId <$> getHeaderOrThrow "X-Nakadi-StreamId" response
       let commit = mkCommit xStreamId
       handleRequest { resultVar, buffer, bufsize } streamParams stream commit eventHandler env
   where
-  mkCommit xStreamId cursors =
-    if cursors == mempty
-    then do pure (Right unit)
-    else commitCursors subscriptionId xStreamId cursors
+    mkCommit xStreamId cursors =
+      if cursors == mempty
+      then do pure (Right unit)
+      else commitCursors subscriptionId xStreamId cursors
 
 handleUnhandledError ∷ Either Error Unit -> Effect Unit
 handleUnhandledError = case _ of
@@ -136,6 +133,7 @@ handleRequest
 handleRequest { resultVar, buffer, bufsize } streamParams resStream commit eventHandler env = do
   callback <- splitAtNewline buffer bufsize  handle
   onData resStream callback
+  onEnd resStream (launchAff_ $ AVar.put StreamClosed resultVar)
   where
     handle eventStreamBatch = runAff_ handleUnhandledError $ do
         let parseFn = JSON.read ∷ Foreign -> E SubscriptionEventStreamBatch
