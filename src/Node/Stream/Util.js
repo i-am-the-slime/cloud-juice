@@ -1,9 +1,14 @@
 'use strict'
 
-exports.splitAtNewlineImpl = function(callback) {
+// const bufsize = 1024*1024*50;
+// const buffer = Buffer.allocUnsafe(bufsize);
+
+exports.allocUnsafeImpl = function(bufsize) {
+    return function() { return Buffer.allocUnsafe(bufsize); };
+}
+
+exports.splitAtNewlineImpl = function(buffer, bufsize, callback) {
     return function () {
-        const bufsize = 1024*1024*50;
-        const buffer = Buffer.allocUnsafe(bufsize);
         var pos = 0;
         return function (chunk) {
             return function() {

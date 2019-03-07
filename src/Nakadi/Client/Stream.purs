@@ -10,7 +10,6 @@ module Nakadi.Client.Stream
 import Prelude
 
 import Control.Monad.Reader (ReaderT, runReaderT)
-import Data.Array as A
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (traverse_)
@@ -22,7 +21,6 @@ import Effect.Aff (Aff, Error, launchAff_, runAff_)
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar as AVar
 import Effect.Class (liftEffect)
-import Effect.Class.Console (logShow)
 import Effect.Class.Console as Console
 import Effect.Exception (error, throwException)
 import Effect.Ref as Ref
@@ -33,11 +31,12 @@ import Nakadi.Client.Internal (catchErrors, jsonErr, unhandled)
 import Nakadi.Client.Types (NakadiResponse, Env)
 import Nakadi.Errors (E400, E401, E403, E404, E409, E422, e400, e401, e403, e404, e409)
 import Nakadi.Types (Event, StreamParameters, SubscriptionCursor, SubscriptionId, XNakadiStreamId(..), SubscriptionEventStreamBatch)
+import Node.Buffer (Buffer)
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client as HTTP
 import Node.Stream (Read, Stream, onData, onDataString, onEnd, pipe)
 import Node.Stream as Stream
-import Node.Stream.Util (splitAtNewlineImpl)
+import Node.Stream.Util (BufferSize, splitAtNewline)
 import Simple.JSON (E, readJSON)
 import Simple.JSON as JSON
 
@@ -71,6 +70,8 @@ postStream
   . { resultVar ∷ AVar StreamReturn
     , batchesVar ∷ AVar (Array SubscriptionEventStreamBatch)
     , onStreamEstablished ∷ Effect Unit
+    , buffer ∷ Buffer
+    , bufsize ∷ BufferSize
     }
   -> StreamParameters
   -> (SubscriptionId -> XNakadiStreamId -> Array SubscriptionCursor -> ReaderT (Env r) Aff CommitResult)
@@ -79,7 +80,7 @@ postStream
   -> Env r
   -> HTTP.Response
   -> Effect Unit
-postStream { resultVar, batchesVar, onStreamEstablished } streamParams commitCursors subscriptionId eventHandler env response = do
+postStream { resultVar, batchesVar, onStreamEstablished, buffer, bufsize } streamParams commitCursors subscriptionId eventHandler env response = do
   let _ = HTTP.statusMessage response
   let isGzipped = getHeader "Content-Encoding" response <#> String.contains (String.Pattern "gzip") # fromMaybe false
   let baseStream = HTTP.responseAsStream response
@@ -99,10 +100,9 @@ postStream { resultVar, batchesVar, onStreamEstablished } streamParams commitCur
     else do
       -- Positive response, so we reset the backoff
       onStreamEstablished
-
       xStreamId <- XNakadiStreamId <$> getHeaderOrThrow "X-Nakadi-StreamId" response
       let commit = mkCommit xStreamId
-      handleRequest { resultVar } streamParams stream commit eventHandler env
+      handleRequest { resultVar, buffer, bufsize } streamParams stream commit eventHandler env
   where
   mkCommit xStreamId cursors =
     if cursors == mempty
@@ -124,6 +124,8 @@ handlePutAVarError = case _ of
 handleRequest
   ∷ ∀ env r
   . { resultVar ∷ AVar StreamReturn
+    , buffer ∷ Buffer
+    , bufsize ∷ BufferSize
     }
   -> StreamParameters
   -> Stream (read ∷ Read | r)
@@ -131,8 +133,8 @@ handleRequest
   -> EventHandler
   -> Env env
   -> Effect Unit
-handleRequest { resultVar } streamParams resStream commit eventHandler env = do
-  callback <- splitAtNewlineImpl handle
+handleRequest { resultVar, buffer, bufsize } streamParams resStream commit eventHandler env = do
+  callback <- splitAtNewline buffer bufsize  handle
   onData resStream callback
   where
     handle eventStreamBatch = runAff_ handleUnhandledError $ do

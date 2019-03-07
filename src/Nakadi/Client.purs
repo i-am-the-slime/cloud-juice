@@ -45,14 +45,12 @@ import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, E
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client (Request)
 import Node.HTTP.Client as HTTP
-import Node.Stream (Readable)
 import Node.Stream as Stream
-import Node.Stream.Util (agent, newHttpKeepAliveAgent, newHttpsKeepAliveAgent)
+import Node.Stream.Util (BufferSize, agent, allocUnsafe, newHttpKeepAliveAgent, newHttpsKeepAliveAgent)
 import Simple.JSON (writeJSON)
 
-
 getEventTypes
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
@@ -64,12 +62,12 @@ getEventTypes = do
     p -> unhandled p
 
 postEventType
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventType
-  -> m (NakadiResponse (conflict :: E409, unprocessableEntity :: E422) Unit)
+  -> m (NakadiResponse (conflict ∷ E409, unprocessableEntity ∷ E422) Unit)
 postEventType eventType = do
   res <- postRequest "/event-types" eventType >>= request >>= deserialise_
   res # catchErrors case _ of
@@ -79,12 +77,12 @@ postEventType eventType = do
     p -> unhandled p
 
 getEventType
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
-  -> m (NakadiResponse (notFound :: E404) EventType)
+  -> m (NakadiResponse (notFound ∷ E404) EventType)
 getEventType (EventTypeName name) = do
   res <- getRequest ("/event-types/" <> name) >>= request >>= deserialise
   res # catchErrors case _ of
@@ -93,13 +91,13 @@ getEventType (EventTypeName name) = do
     p -> unhandled p
 
 putEventType
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
   -> EventType
-  -> m (NakadiResponse (forbidden :: E403, notFound :: E404, unprocessableEntity :: E422) Unit)
+  -> m (NakadiResponse (forbidden ∷ E403, notFound ∷ E404, unprocessableEntity ∷ E422) Unit)
 putEventType (EventTypeName name) eventType = do
   res <- putRequest ("/event-types/" <> name) eventType >>= request >>= deserialise_
   res # catchErrors case _ of
@@ -110,12 +108,12 @@ putEventType (EventTypeName name) eventType = do
     p -> unhandled p
 
 deleteEventType
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
-  -> m (NakadiResponse (forbidden :: E403, notFound :: E404) Unit)
+  -> m (NakadiResponse (forbidden ∷ E403, notFound ∷ E404) Unit)
 deleteEventType (EventTypeName name) = do
   res <- deleteRequest ("/event-types/" <> name) >>= request  >>= deserialise_
   res # catchErrors case _ of
@@ -125,13 +123,13 @@ deleteEventType (EventTypeName name) = do
     p -> unhandled p
 
 getCursorDistances
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
   -> (Array CursorDistanceQuery)
-  -> m (NakadiResponse (forbidden :: E403, notFound :: E404, unprocessableEntity :: E422) (Array CursorDistanceResult))
+  -> m (NakadiResponse (forbidden ∷ E403, notFound ∷ E404, unprocessableEntity ∷ E422) (Array CursorDistanceResult))
 getCursorDistances (EventTypeName name) queries = do
   let path = "/event-types/" <> name <> "/cursor-distances"
   res <- postRequest path queries >>= request >>= deserialise
@@ -142,13 +140,13 @@ getCursorDistances (EventTypeName name) queries = do
     p -> unhandled p
 
 getCursorLag
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
   -> (Array Cursor)
-  -> m (NakadiResponse (forbidden :: E403, notFound :: E404, unprocessableEntity :: E422) (Array Partition))
+  -> m (NakadiResponse (forbidden ∷ E403, notFound ∷ E404, unprocessableEntity ∷ E422) (Array Partition))
 getCursorLag (EventTypeName name) cursors = do
   let path = "/event-types/" <> name <> "/cursors-lag"
   res <- postRequest path cursors >>= request >>= deserialise
@@ -159,13 +157,13 @@ getCursorLag (EventTypeName name) cursors = do
     p -> unhandled p
 
 postEvents
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => EventTypeName
   -> (Array Event)
-  -> m (NakadiResponse (multiStatus :: E207, forbidden :: E403, notFound :: E404, unprocessableEntityPublish :: E422Publish) Unit)
+  -> m (NakadiResponse (multiStatus ∷ E207, forbidden ∷ E403, notFound ∷ E404, unprocessableEntityPublish ∷ E422Publish) Unit)
 postEvents (EventTypeName name) events = do
   let path = "/event-types/" <> name <> "/events"
   { body, status: StatusCode statusCode } <- postRequest path events >>= request
@@ -185,12 +183,12 @@ postEvents (EventTypeName name) events = do
     Nothing -> Right unit
 
 postSubscription
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
   => Subscription
-  -> m (NakadiResponse (badRequest :: E400, unprocessableEntity :: E422) Subscription)
+  -> m (NakadiResponse (badRequest ∷ E400, unprocessableEntity ∷ E422) Subscription)
 postSubscription subscription = do
   let path = "/subscriptions"
   res <- postRequest path subscription >>= request >>= deserialise
@@ -201,7 +199,7 @@ postSubscription subscription = do
     p -> unhandled p
 
 commitCursors
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadAff m
@@ -221,20 +219,22 @@ commitCursors (SubscriptionId id) (XNakadiStreamId header) items = do
     p -> unhandled p
 
 
-foreign import removeRequestTimeout :: Request -> Effect Unit
+foreign import removeRequestTimeout ∷ Request -> Effect Unit
 
 streamSubscriptionEvents
-  :: ∀ r m
+  ∷ ∀ r m
    . MonadAsk (Env r) m
   => MonadThrow Error m
   => MonadError Error m
   => MonadAff m
-  => SubscriptionId
+  => BufferSize
+  -> SubscriptionId
   -> StreamParameters
   -> (Array Event -> Aff Unit)
   -> m StreamReturn
-streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandler = do
-  env   <- ask
+streamSubscriptionEvents bufsize sid@(SubscriptionId subId) streamParameters eventHandler = do
+  env    <- ask
+  buffer <- liftEffect $ allocUnsafe bufsize
 
   let listen postArgs = do
         token <- env.token
@@ -278,7 +278,7 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
         Ref.write baseBackOff backOffRef
 
   let
-    go :: m StreamReturn
+    go ∷ m StreamReturn
     go = do
         resultVar <- liftAff AVar.empty
         batchesVar <- liftAff AVar.empty
@@ -286,6 +286,8 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
         let postArgs = { resultVar
                        , batchesVar
                        , onStreamEstablished: resetBackOff
+                       , buffer
+                       , bufsize
                        }
         destroyStream <- liftEffect $ listen postArgs
         res <- liftAff $ AVar.take resultVar
@@ -312,10 +314,10 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
             (default (pure res))
 
   let
-    retryPolicy :: RetryPolicyM m
+    retryPolicy ∷ RetryPolicyM m
     retryPolicy = constantDelay (200.0 # Milliseconds) <> limitRetries 10
   let
-    retryChecks :: Array (RetryStatus -> Error -> m Boolean)
+    retryChecks ∷ Array (RetryStatus -> Error -> m Boolean)
     retryChecks = [\_ _ -> pure true]
 
   recovering retryPolicy retryChecks (const go)
