@@ -1,33 +1,21 @@
-module Node.Stream.Util
-  ( writable
-  , Done (..)
-  , throughMap
-  , splitWithFn
-  )
-  where
+module Node.Stream.Util where
 
 import Prelude
 
+import Data.Options (Option, opt)
 import Effect (Effect)
-import Node.Encoding (Encoding)
-import Node.Stream (Writable, Duplex)
+import Foreign (Foreign)
+import Node.Buffer (Buffer)
+import Node.HTTP.Client (RequestOptions)
 
-type Done = Effect Unit
-type Next a = a -> Effect Unit
+foreign import splitAtNewlineImpl ::
+  (Foreign -> Effect Unit) -> Effect (Buffer -> Effect Unit)
 
-foreign import writableImpl
-  ∷ ∀ a w. (a -> Encoding -> Done -> Effect Unit) -> Effect (Writable w)
+foreign import data Agent :: Type
 
-writable
-  ∷ ∀ a w
-  . (a -> Encoding -> Done -> Effect Unit)
- -> Effect (Writable w)
-writable = writableImpl
+foreign import newHttpsKeepAliveAgent :: Effect Agent
+foreign import newHttpKeepAliveAgent :: Effect Agent
 
-foreign import throughMap
-  ∷ ∀ a b. (a -> b) -> Effect Duplex
-
-foreign import split2 ∷ ∀ a. (String -> a) -> Effect Duplex
-
-splitWithFn ∷ ∀ a. (String -> a) -> Effect Duplex
-splitWithFn = split2
+-- | The agent to use
+agent :: Option RequestOptions Agent
+agent =  opt "agent"

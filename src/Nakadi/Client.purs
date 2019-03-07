@@ -45,7 +45,9 @@ import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, E
 import Node.Encoding (Encoding(..))
 import Node.HTTP.Client (Request)
 import Node.HTTP.Client as HTTP
+import Node.Stream (Readable)
 import Node.Stream as Stream
+import Node.Stream.Util (agent, newHttpKeepAliveAgent, newHttpsKeepAliveAgent)
 import Simple.JSON (writeJSON)
 
 
@@ -246,6 +248,8 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
         let headers = Object.fromFoldable headers'
         let https = String.stripPrefix (String.Pattern "https://") env.baseUrl
         let http  = String.stripPrefix (String.Pattern "http://") env.baseUrl
+        keepAliveAgent <- liftEffect $
+          if isJust http then newHttpKeepAliveAgent else newHttpsKeepAliveAgent
         let hostname = fromMaybe env.baseUrl (https <|> http)
         let protocol = if isJust http then "http:" else "https:"
         let options = HTTP.protocol := protocol
@@ -254,21 +258,19 @@ streamSubscriptionEvents sid@(SubscriptionId subId) streamParameters eventHandle
                    <> HTTP.headers  := HTTP.RequestHeaders headers
                    <> HTTP.method   := "POST"
                    <> HTTP.path     := ("/subscriptions/" <> subId <> "/events")
+                   <> agent         := keepAliveAgent
 
         let requestCallback = postStream postArgs streamParameters commitCursors sid eventHandler env
+
         req <- HTTP.request options requestCallback
         removeRequestTimeout req
         let writable = HTTP.requestAsStream req
         let body = writeJSON streamParameters
-        Stream.onClose writable (Console.log "request written!")
-        Stream.onEnd writable (Console.log "request end!!!")
-        Stream.onFinish writable (Console.log "request finish!!!")
         Stream.onError writable (\e -> Console.log $ "Error!!!" <> message e)
-        let endStream = do
-              Console.log "Destroying stream"
-              Stream.end writable (pure unit)
+        let endStream = Stream.end writable (pure unit)
         _ <- Stream.writeString writable UTF8 body endStream
         pure unit
+
 
   let baseBackOff = 1.0 # Seconds
   backOffRef <- liftEffect $ Ref.new baseBackOff
