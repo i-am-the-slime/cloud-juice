@@ -1,6 +1,7 @@
 module Nakadi.Client.Types
   ( Env
   , NakadiResponse
+  , LogWarnFn
   )
   where
 
@@ -13,6 +14,8 @@ import Effect (Effect)
 import FlowId (FlowId)
 import Nakadi.Errors (E401)
 import Nakadi.Types (Problem)
+
+type LogWarnFn = Maybe Problem -> String -> Effect Unit
 
 type Env r =
   { flowId  :: FlowId

@@ -19,27 +19,25 @@ import Control.Monad.Error.Class (class MonadError, class MonadThrow)
 import Control.Monad.Reader (class MonadAsk, ask)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Int (round)
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
-import Data.Newtype (over, unwrap)
+import Data.Newtype (unwrap)
 import Data.Options ((:=))
 import Data.String as String
-import Data.Time.Duration (Milliseconds(..), Seconds(..), convertDuration)
+import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..))
 import Data.Variant (default, on)
 import Effect (Effect)
-import Effect.Aff (Aff, delay, message)
+import Effect.Aff (Aff, message)
 import Effect.Aff.AVar as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Aff.Retry (RetryPolicyM, RetryStatus, constantDelay, limitRetries, recovering)
+import Effect.Aff.Retry (RetryPolicyM, RetryStatus, constantDelay, limitRetries, retrying)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (Error)
-import Effect.Ref as Ref
 import Foreign.Object as Object
 import Nakadi.Client.Internal (catchErrors, deleteRequest, deserialise, deserialiseProblem, deserialise_, getRequest, postRequest, putRequest, readJson, request, unhandled)
 import Nakadi.Client.Stream (CommitResult, StreamReturn(..), postStream)
-import Nakadi.Client.Types (Env, NakadiResponse)
+import Nakadi.Client.Types (Env, NakadiResponse, LogWarnFn)
 import Nakadi.Errors (E207, E400, E403, E404, E409(..), E422(..), E422Publish, _conflict, _unprocessableEntity, e207, e400, e401, e403, e404, e409, e422, e422Publish)
 import Nakadi.Types (Cursor, CursorDistanceQuery, CursorDistanceResult, Event, EventType, EventTypeName(..), Partition, StreamParameters, Subscription, SubscriptionCursor, SubscriptionId(..), XNakadiStreamId(..))
 import Node.Encoding (Encoding(..))
@@ -236,88 +234,64 @@ streamSubscriptionEvents bufsize sid@(SubscriptionId subId) streamParameters eve
   env    <- ask
   buffer <- liftEffect $ allocUnsafe bufsize
 
-  let listen postArgs = do
-        token <- env.token
-        let headers' =
-              [ Tuple "X-Flow-ID" (unwrap env.flowId)
-              , Tuple "Authorization" token
-              , Tuple "Content-Type"    "application/json"
-              , Tuple "Accept"          "application/json"
-              -- , Tuple "Accept-Encoding" "gzip"
-              ]
-        let headers = Object.fromFoldable headers'
-        let https = String.stripPrefix (String.Pattern "https://") env.baseUrl
-        let http  = String.stripPrefix (String.Pattern "http://") env.baseUrl
-        keepAliveAgent <- liftEffect $
-          if isJust http then newHttpKeepAliveAgent else newHttpsKeepAliveAgent
-        let hostname = fromMaybe env.baseUrl (https <|> http)
-        let protocol = if isJust http then "http:" else "https:"
-        let options = HTTP.protocol := protocol
-                   <> HTTP.hostname := hostname
-                   <> HTTP.port     := env.port
-                   <> HTTP.headers  := HTTP.RequestHeaders headers
-                   <> HTTP.method   := "POST"
-                   <> HTTP.path     := ("/subscriptions/" <> subId <> "/events")
-                   <> agent         := keepAliveAgent
-
-        let requestCallback = postStream postArgs streamParameters commitCursors sid eventHandler env
-
-        req <- HTTP.request options requestCallback
-        removeRequestTimeout req
-        let writable = HTTP.requestAsStream req
-        let body = writeJSON streamParameters
-        Stream.onError writable (\e -> Console.log $ "Error!!!" <> message e)
-        let endStream = Stream.end writable (pure unit)
-        _ <- Stream.writeString writable UTF8 body endStream
-        pure unit
-
-
-  let baseBackOff = 1.0 # Seconds
-  backOffRef <- liftEffect $ Ref.new baseBackOff
-  let resetBackOff = liftEffect $ do
-        Ref.write baseBackOff backOffRef
-
   let
+    listen postArgs = do
+      token <- env.token
+      let headers' =
+            [ Tuple "X-Flow-ID" (unwrap env.flowId)
+            , Tuple "Authorization" token
+            , Tuple "Content-Type"    "application/json"
+            , Tuple "Accept"          "application/json"
+            -- , Tuple "Accept-Encoding" "gzip"
+            ]
+      let headers = Object.fromFoldable headers'
+      let https = String.stripPrefix (String.Pattern "https://") env.baseUrl
+      let http  = String.stripPrefix (String.Pattern "http://") env.baseUrl
+      keepAliveAgent <- liftEffect $
+        if isJust http then newHttpKeepAliveAgent else newHttpsKeepAliveAgent
+      let hostname = fromMaybe env.baseUrl (https <|> http)
+      let protocol = if isJust http then "http:" else "https:"
+      let options = HTTP.protocol := protocol
+                  <> HTTP.hostname := hostname
+                  <> HTTP.port     := env.port
+                  <> HTTP.headers  := HTTP.RequestHeaders headers
+                  <> HTTP.method   := "POST"
+                  <> HTTP.path     := ("/subscriptions/" <> subId <> "/events")
+                  <> agent         := keepAliveAgent
+
+      let requestCallback = postStream postArgs streamParameters commitCursors sid eventHandler env
+
+      req <- HTTP.request options requestCallback
+      removeRequestTimeout req
+      let writable = HTTP.requestAsStream req
+      let body = writeJSON streamParameters
+      Stream.onError writable (\e -> Console.log $ "Error!!!" <> message e)
+      let endStream = Stream.end writable (pure unit)
+      _ <- Stream.writeString writable UTF8 body endStream
+      pure unit
+
     go ∷ m StreamReturn
     go = do
         resultVar <- liftAff AVar.empty
-        batchesVar <- liftAff AVar.empty
-        liftAff $ AVar.put [] batchesVar
         let postArgs = { resultVar
-                       , batchesVar
-                       , onStreamEstablished: resetBackOff
                        , buffer
                        , bufsize
                        }
-        destroyStream <- liftEffect $ listen postArgs
-        res <- liftAff $ AVar.take resultVar
+        liftEffect $ listen postArgs
+        liftAff $ AVar.take resultVar
 
-        let retry prob errMsg = do
-              bo@(Seconds backOff) <- liftEffect $ Ref.read backOffRef
-              let fullMessage = errMsg <> " Cancelling stream and retrying in "
-                                       <> show (round backOff) <> " seconds"
-              liftEffect $ env.logWarn prob fullMessage
-              liftAff (delay (convertDuration bo))
-              liftEffect $ Ref.modify_ (over Seconds (2.0 * _)) backOffRef
-              go
-
-        -- Handle errors
-        case res of
-          StreamClosed ->
-            retry Nothing "Stream closed by Nakadi"
-          FailedToStream err -> err #
-            on _conflict (\(E409 p) -> retry (Just p) "Failed to start streaming.")
-            (default (pure res))
-
-          FailedToCommit err -> err #
-            on _unprocessableEntity (\(E422 p) -> retry (Just p) "Failed to commit cursor.")
-            (default (pure res))
-
-  let
     retryPolicy ∷ RetryPolicyM m
     retryPolicy = constantDelay (200.0 # Milliseconds) <> limitRetries 10
-  let
-    retryChecks ∷ Array (RetryStatus -> Error -> m Boolean)
-    retryChecks = [\_ _ -> pure true]
+    retryCheck ∷ LogWarnFn -> RetryStatus -> StreamReturn -> m Boolean
+    retryCheck logWarn _ res = liftEffect $
+      case res of
+        StreamClosed ->
+          logWarn Nothing "Stream closed by Nakadi" $> true
+        FailedToStream err -> err #
+          on _conflict (\(E409 p) -> logWarn (Just p) "Failed to start streaming." $> true)
+          (default (pure true))
+        FailedToCommit err -> err #
+          on _unprocessableEntity (\(E422 p) -> logWarn (Just p) "Failed to commit cursor." $> true)
+          (default (pure true))
 
-  recovering retryPolicy retryChecks (const go)
+  retrying retryPolicy (retryCheck env.logWarn) (const go)
