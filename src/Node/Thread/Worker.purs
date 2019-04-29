@@ -1,1 +1,0 @@
-module Node.Thread.Worker where
