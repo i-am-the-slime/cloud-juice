@@ -30,7 +30,7 @@ import Effect (Effect)
 import Effect.Aff (Aff, message)
 import Effect.Aff.AVar as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Aff.Retry (RetryPolicyM, RetryStatus, constantDelay, limitRetries, retrying)
+import Effect.Aff.Retry (RetryPolicyM, RetryStatus, exponentialBackoff, limitRetries, retrying)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (Error)
@@ -281,7 +281,7 @@ streamSubscriptionEvents bufsize sid@(SubscriptionId subId) streamParameters eve
         liftAff $ AVar.take resultVar
 
     retryPolicy ∷ RetryPolicyM m
-    retryPolicy = constantDelay (200.0 # Milliseconds) <> limitRetries 10
+    retryPolicy = exponentialBackoff (200.0 # Milliseconds) <> limitRetries 10
     retryCheck ∷ LogWarnFn -> RetryStatus -> StreamReturn -> m Boolean
     retryCheck logWarn _ res = liftEffect $
       case res of

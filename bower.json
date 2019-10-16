@@ -11,27 +11,27 @@
     "output"
   ],
   "dependencies": {
-    "purescript-affjax": "^9.0.0",
+    "purescript-affjax": "^9.0.1",
     "purescript-avar": "^3.0.0",
     "purescript-console": "^4.2.0",
     "purescript-debug": "^4.0.0",
     "purescript-effect": "^2.0.1",
     "purescript-foreign": "^5.0.0",
-    "purescript-foreign-generic": "^9.0.0",
+    "purescript-foreign-generic": "^10.0.0",
     "purescript-formatters": "^4.0.1",
-    "purescript-node-fs": "^5.0.0",
-    "purescript-node-http": "^5.0.0",
+    "purescript-node-fs": "^5.0.1",
+    "purescript-node-http": "^5.0.2",
     "purescript-node-process": "^7.0.0",
-    "purescript-node-streams": "^4.0.0",
+    "purescript-node-streams": "^4.0.1",
     "purescript-prelude": "^4.1.1",
     "purescript-psci-support": "^4.0.0",
     "purescript-quickcheck": "^6.1.0",
-    "purescript-simple-json": "^5.1.0",
-    "purescript-spec": "^3.1.0",
-    "purescript-spec-discovery": "^3.1.0",
+    "purescript-simple-json": "^7.0.0",
+    "purescript-spec": "^4.0.1",
+    "purescript-spec-discovery": "^4.0.0",
     "purescript-spec-quickcheck": "^3.1.0",
     "purescript-transformers": "^4.2.0",
-    "purescript-variant": "^6.0.0",
+    "purescript-variant": "^6.0.1",
     "purescript-flow-id": "^1.0.0",
     "purescript-nullable": "^4.1.1",
     "purescript-aff-retry": "^1.2.1"
@@ -42,7 +42,11 @@
   "resolutions": {
     "purescript-foreign-object": "^2.0.0",
     "purescript-quickcheck": "^6.1.0",
-    "purescript-record": "^2.0.0",
-    "purescript-typelevel-prelude": "^4.0.0"
+    "purescript-record": "^2.0.1",
+    "purescript-typelevel-prelude": ">= 4.0.0 < 6.0.0",
+    "purescript-foreign-generic": "^10.0.0",
+    "purescript-simple-json": "^7.0.0",
+    "purescript-spec": "^4.0.1",
+    "purescript-spec-discovery": "^4.0.0"
   }
 }

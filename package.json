@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/i-am-the-slime/purescript-cloud-juice#readme",
   "dependencies": {
+    "pulp": "^13.0.0",
     "split2": "^3.1.0",
     "xhr2": "^0.1.4",
     "zlib": "^1.0.5"

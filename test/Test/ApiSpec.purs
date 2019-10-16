@@ -16,7 +16,7 @@ import Data.Maybe (fromMaybe)
 import Data.Newtype (unwrap)
 import Data.String as String
 import Data.Time.Duration (Milliseconds(..), Seconds(..), convertDuration)
-import Data.Traversable (sequence, sequence_, traverse_)
+import Data.Traversable (sequence_, traverse_)
 import Data.Variant (expand)
 import Effect.Aff (Aff, delay)
 import Effect.Class (liftEffect)
@@ -32,6 +32,7 @@ import Nakadi.Types (Event(..), EventTypeName(..), OwningApplication(..), Subscr
 import Node.Encoding (Encoding(..))
 import Node.Process (stdout)
 import Node.Stream (writeString)
+import Node.Stream.Util (BufferSize(..))
 import Simple.JSON (class WriteForeign, writeImpl, writeJSON)
 import Test.Spec (Spec, describe, it, pending)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -166,11 +167,10 @@ spec =
         events     <- liftEffect $ Ref.new 0
         characters <- liftEffect $ Ref.new 0
         startTime  <- liftEffect now
-        res        <- run $ streamSubscriptionEvents subId (Minimal.streamParameters 20 40) (handler events characters startTime)
+        res        <- run $ streamSubscriptionEvents (BufferSize $ 1024*1024) subId (Minimal.streamParameters 20 40) (handler events characters startTime)
         Console.log $ "Consuming for " <> show (unwrap timeout) <> " seconds"
         delay <<< convertDuration $ timeout
-        Console.log "\nKilling in the name of the lord"
-        _ <- liftEffect $ sequence res
+        Console.log "\nKilling in the name of the zablord"
         eventsProcessed <- liftEffect $ Ref.read events
         when (eventsProcessed < minEvents)
           (fail $ "Processed fewer than " <> show minEvents <> " events in " <> show (unwrap timeout) <> " seconds.")
