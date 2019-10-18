@@ -23,18 +23,19 @@ import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Newtype (unwrap)
 import Data.Options ((:=))
 import Data.String as String
-import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds(..), Minutes(..))
 import Data.Tuple (Tuple(..))
 import Data.Variant (default, on)
 import Effect (Effect)
 import Effect.Aff (Aff, message)
 import Effect.Aff.AVar as AVar
 import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Aff.Retry (RetryPolicyM, RetryStatus, exponentialBackoff, limitRetries, retrying)
+import Effect.Aff.Retry (RetryPolicyM, RetryStatus, constantDelay, exponentialBackoff, limitRetries, retrying)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (Error)
 import Foreign.Object as Object
+import Math (pi)
 import Nakadi.Client.Internal (catchErrors, deleteRequest, deserialise, deserialiseProblem, deserialise_, getRequest, postRequest, putRequest, readJson, request, unhandled)
 import Nakadi.Client.Stream (CommitResult, StreamReturn(..), postStream)
 import Nakadi.Client.Types (Env, NakadiResponse, LogWarnFn)
@@ -281,7 +282,9 @@ streamSubscriptionEvents bufsize sid@(SubscriptionId subId) streamParameters eve
         liftAff $ AVar.take resultVar
 
     retryPolicy ∷ RetryPolicyM m
-    retryPolicy = exponentialBackoff (200.0 # Milliseconds) <> limitRetries 10
+    retryPolicy = exponentialBackoff (200.0 # Milliseconds) <>
+                  limitRetries 10 <>
+                  constantDelay (pi # Minutes)
     retryCheck ∷ LogWarnFn -> RetryStatus -> StreamReturn -> m Boolean
     retryCheck logWarn _ res = liftEffect $
       case res of
