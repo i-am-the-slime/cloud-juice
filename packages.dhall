@@ -119,11 +119,10 @@ let additions =
 
 
 let upstream =
-      https://github.com/purescript/package-sets/releases/download/psc-0.13.3-20190831/packages.dhall sha256:852cd4b9e463258baf4e253e8524bcfe019124769472ca50b316fe93217c3a47
-
+      https://github.com/purescript/package-sets/releases/download/psc-0.13.5-20191127/packages.dhall sha256:654e8427ff1f9830542f491623cd5d89b1648774a765520554f98f41d3d1b3b3
 
 let overrides =
-    { spec-discovery =
+      { spec-discovery =
               upstream.spec-discovery
           //  { repo =
                   "https://github.com/reactormonk/purescript-spec-discovery.git"
@@ -132,10 +131,10 @@ let overrides =
               }
       , spec =
           upstream.spec // { version = "v3.1.1" }
-    }
+      }
 
-let additions = {
-    aff-retry =
+let additions =
+      { aff-retry =
           { dependencies =
               [ "aff"
               , "transformers"
@@ -149,7 +148,7 @@ let additions = {
           , version =
               "fa0814127c8f0ce95ecc98537f5d58cbd7d0a71c"
           }
-    , flow-id =
+      , flow-id =
           { dependencies =
               [ "prelude", "simple-json" ]
           , repo =
@@ -157,6 +156,6 @@ let additions = {
           , version =
               "v1.0.0"
           }
-    }
+      }
 
 in  upstream // overrides // additions

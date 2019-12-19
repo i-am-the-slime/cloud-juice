@@ -2,7 +2,7 @@ module Nakadi.Client.Internal where
 
 import Prelude
 
-import Affjax (Request, Response, ResponseFormatError, printResponseFormatError)
+import Affjax (Request, Response, printError)
 import Affjax as AX
 import Affjax.RequestBody as RequestBody
 import Affjax.RequestHeader (RequestHeader(..))
@@ -24,7 +24,7 @@ import Nakadi.Client.Types (Env)
 import Nakadi.Types (Problem)
 import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 
-request :: ∀ a m. MonadAff m => Request a -> m (Response (Either ResponseFormatError a))
+request :: ∀ a m. MonadAff m => Request a -> m (Either AX.Error (Response a))
 request = liftAff <<< AX.request
 
 baseHeaders :: ∀ r m . MonadAsk (Env r) m => MonadAff m => m (Array (Tuple String String))
@@ -71,29 +71,35 @@ postRequest = writeRequest POST
 putRequest :: ∀ a m r . WriteForeign a => MonadAsk (Env r) m => MonadAff m => String -> a -> m (Request String)
 putRequest = writeRequest PUT
 
-formatErr :: ∀ m a. MonadThrow Error m => ResponseFormatError -> m a
-formatErr = throwError <<< error <<< printResponseFormatError -- >>> spy "Response Format Error"
+formatErr :: ∀ m a. MonadThrow Error m => AX.Error -> m a
+formatErr = throwError <<< error <<< printError
 
 jsonErr :: ∀ m f a.  MonadThrow Error m => Foldable f => f ForeignError -> m a
-jsonErr = throwError <<< error <<< foldMap renderForeignError -- >>> spy "Foreign error"
+jsonErr = throwError <<< error <<< foldMap renderForeignError
 
-deserialiseProblem :: ∀ m a b. MonadThrow Error m => ReadForeign a => Either ResponseFormatError String -> m (Either a b)
-deserialiseProblem = either formatErr (readJSON >>> either jsonErr (pure <<< Left))
-
-readJson :: ∀ m f a. MonadThrow Error m => ReadForeign a => Applicative f => Either ResponseFormatError String -> m (f a)
-readJson = either formatErr (readJSON >>> either jsonErr (pure <<< pure))
-
-deserialise_ :: ∀ m . MonadThrow Error m => Response (Either ResponseFormatError String) -> m (Either Problem Unit)
-deserialise_ { body, status: StatusCode code} =
+deserialise_ :: ∀ m . MonadThrow Error m => Either AX.Error (Response String) -> m (Either Problem Unit)
+deserialise_ = case _ of
+  Right { body, status: StatusCode code } ->
     if code # between 200 299
       then pure <<< pure $ unit
-      else deserialiseProblem body -- # spy "Broken Response"
+      else deserialiseProblem body
+  Left error ->
+    formatErr error
 
-deserialise :: ∀ m a . MonadThrow Error m => ReadForeign a => Response (Either ResponseFormatError String) -> m (Either Problem a)
-deserialise { body, status: StatusCode code} =
-    if code # between 200 299
-      then readJson body -- # spy "Happy Response" body
-      else deserialiseProblem body -- # spy "Broken Response"
+deserialise :: ∀ m a . MonadThrow Error m => ReadForeign a => Either AX.Error (Response String) -> m (Either Problem a)
+deserialise = case _ of
+    Right { body, status: StatusCode code } ->
+      if code # between 200 299
+        then readJson body
+        else deserialiseProblem body
+    Left error ->
+      formatErr error
+
+deserialiseProblem :: ∀ m a b. MonadThrow Error m => ReadForeign a => String -> m (Either a b)
+deserialiseProblem = readJSON >>> either jsonErr (pure <<< Left)
+
+readJson :: ∀ m f a. MonadThrow Error m => ReadForeign a => Applicative f => String -> m (f a)
+readJson = readJSON >>> either jsonErr (pure <<< pure)
 
 unhandled :: ∀ a m. MonadThrow Error m => Problem -> m a
 unhandled p = throwError <<< error $ "Unhandled response code " <> writeJSON p
