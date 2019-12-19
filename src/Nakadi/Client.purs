@@ -35,7 +35,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (Error)
 import Foreign.Object as Object
-import Nakadi.Client.Internal (catchErrors, deleteRequest, deserialise, deserialiseProblem, deserialise_, getRequest, postRequest, putRequest, readJson, request, unhandled)
+import Nakadi.Client.Internal (catchErrors, deleteRequest, deserialise, deserialiseProblem, deserialise_, formatErr, getRequest, postRequest, putRequest, readJson, request, unhandled)
 import Nakadi.Client.Stream (CommitResult, StreamReturn(..), postStream)
 import Nakadi.Client.Types (Env, NakadiResponse, LogWarnFn)
 import Nakadi.Errors (E207, E400, E403, E404, E409(..), E422(..), E422Publish, _conflict, _unprocessableEntity, e207, e400, e401, e403, e404, e409, e422, e422Publish)
@@ -164,21 +164,25 @@ postEvents
   -> m (NakadiResponse (multiStatus ∷ E207, forbidden ∷ E403, notFound ∷ E404, unprocessableEntityPublish ∷ E422Publish) Unit)
 postEvents (EventTypeName name) events = do
   let path = "/event-types/" <> name <> "/events"
-  { body, status: StatusCode statusCode } <- postRequest path events >>= request
-  res1 <- case statusCode of
-    code | code == 422 || code == 207 -> map Just <$> readJson body
-    code | code # between 200 299 -> (pure <<< pure) Nothing
-    _ -> deserialiseProblem body
-  res2 <- res1 # catchErrors case _ of -- is this all correct?
-    p @ { status: 403 } -> pure $ lmap e403 res1
-    p @ { status: 404 } -> pure $ lmap e404 res1
-    p -> unhandled p
-  pure $ res2 >>= case _ of
-    Just batchProblem ->
-      if statusCode == 207
-      then Left $ e207 batchProblem -- this is treated as an error
-      else Left $ e422Publish batchProblem
-    Nothing -> Right unit
+  response <- postRequest path events >>= request
+  case response of
+    Right { body, status: StatusCode statusCode } -> do
+      res1 <- case statusCode of
+        code | code == 422 || code == 207 -> map Just <$> readJson body
+        code | code # between 200 299 -> (pure <<< pure) Nothing
+        _ -> deserialiseProblem body
+      res2 <- res1 # catchErrors case _ of -- is this all correct?
+        p @ { status: 403 } -> pure $ lmap e403 res1
+        p @ { status: 404 } -> pure $ lmap e404 res1
+        p -> unhandled p
+      pure $ res2 >>= case _ of
+        Just batchProblem ->
+          if statusCode == 207
+          then Left $ e207 batchProblem -- this is treated as an error
+          else Left $ e422Publish batchProblem
+        Nothing -> Right unit
+    Left error ->
+      formatErr error
 
 postSubscription
   ∷ ∀ r m
